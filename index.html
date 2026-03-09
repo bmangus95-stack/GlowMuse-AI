@@ -1,0 +1,116 @@
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>UGC Skincare | AI Brand Strategist</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+              serif: ['Cinzel', 'serif'],
+            },
+            colors: {
+              brand: {
+                50: '#f5f3ff',
+                100: '#ede9fe',
+                200: '#ddd6fe',
+                300: '#c4b5fd',
+                400: '#a78bfa',
+                500: '#8b5cf6',
+                600: '#7c3aed',
+                700: '#6d28d9',
+                800: '#5b21b6',
+                900: '#4c1d95',
+                950: '#2e1065',
+              },
+              sand: {
+                50: '#fdfaf6',
+                100: '#f7f0e1',
+                200: '#efe1c3',
+                300: '#e3cca1',
+                400: '#d5b47a',
+                500: '#c59a54',
+                600: '#b18141',
+                700: '#936836',
+                800: '#7a5630',
+                900: '#65472a',
+                950: '#382617',
+              },
+              skin: {
+                glow: '#fdf2f8',
+                serum: '#e2e8f0',
+                gold: '#d4af37',
+                'light-beige': '#f9ebde',
+                'warm-tan': '#af6e4d',
+                'deep-espresso': '#3d2b1f'
+              },
+              dark: {
+                900: '#0f0f11',
+                800: '#18181b',
+                700: '#27272a',
+              },
+              light: {
+                50: '#fdfaf6',
+                100: '#f7f0e1',
+                200: '#efe1c3',
+                300: '#e3cca1',
+                800: '#424242',
+                900: '#212121',
+              }
+            }
+          },
+        },
+      }
+    </script>
+    <style>
+      body {
+        background-color: #fdfaf6;
+        color: #212121;
+        transition: background-color 0.3s, color 0.3s;
+      }
+      body.dark {
+        background-color: #0f0f11;
+        color: #e4e4e7;
+      }
+      ::-webkit-scrollbar {
+        width: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #f1f5f9;
+      }
+      body.dark ::-webkit-scrollbar-track {
+        background: #18181b;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 4px;
+      }
+      body.dark ::-webkit-scrollbar-thumb {
+        background: #3f3f46;
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0",
+    "jszip": "https://esm.sh/jszip@3.10.1"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body class="light">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>

@@ -16,7 +16,7 @@ Journals priced from $3 to $37. Her Beautiful Chapter content systems, nothing o
 
 ## Where she spends time online
 
-TikTok. Fanvue. LinkedIn. FeetFinder and subscription platforms. A creator who is already testing monetization, not someone sitting on the sidelines.
+TikTok, Instagram, Facebook, Pinterest, and LinkedIn. She follows other women her age who are reinventing, and saves more than she posts. Creator and subscription platforms like Fanvue and FeetFinder belong to the separate Jess persona, tracked in audience-jess.md, not here.
 
 ## What she actually feels, in real language
 

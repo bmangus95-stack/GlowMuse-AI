@@ -63,6 +63,6 @@ The house is quieter than you expected, and somehow that quiet brings up everyth
 
 You do not need a complete life overhaul. You just need a starting point that feels manageable, warm, and actually built for where you are right now.
 
-## The sharper register, Gen X Unleashed and The Baddie Shift only
+## The sharper register, Gen X Unleashed, The Baddie Shift, and Jess
 
-Same person, more edge. Blunt, confident, a little defiant. Short punchy lines. This is where "just do the damn thing" and "if you built it you deserve to get paid for it" live. Still no dashes, still no hollow hype. Keep this completely separate from HBC. Never mix the two voices in one post.
+Same person, more edge. Blunt, confident, a little defiant. Short punchy lines. This is where "just do the damn thing" and "if you built it you deserve to get paid for it" live. Still no dashes, still no hollow hype. The Jess persona lives in this register too, a little different from HBC, closer to Gen X Unleashed. Keep all of this completely separate from HBC. Never mix the two voices in one post.

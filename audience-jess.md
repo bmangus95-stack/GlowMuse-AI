@@ -2,6 +2,8 @@
 
 Audience file for the Jess persona, kept fully separate from Her Beautiful Chapter. Jess is the avatar persona used for LiveGood affiliate work and for creator and subscription platforms. Different platforms, different voice, different buyer. Never blend Jess and HBC in one piece.
 
+Voice note. Jess is a little different from HBC. Her tone lives in the Gen X Unleashed register, sharper and more confident, not the warm grounded HBC voice. See the sharper register section in voice.md.
+
 ## The persona
 
 Jess is a creator persona, not the HBC brand. She operates where monetization is direct and platform native: Fanvue, FeetFinder, subscription platforms, and TikTok as the top of funnel. The HBC audience is women rebuilding themselves. The Jess audience is whoever pays Jess, which is a different group and needs its own research.
@@ -24,7 +26,6 @@ Goal: direct creator income, separate from the HBC product line.
 
 Which audience above is the real target, A, B, or both with separate sections.
 What Jess actually sells on each platform and the price points.
-The voice for Jess, since it should not borrow the HBC warm grounded tone. Tell me three or four adjectives or point me at a Jess post you already wrote.
 
 ## Next step
 

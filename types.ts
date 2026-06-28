@@ -121,8 +121,9 @@ export interface PinterestPin {
   boardName?: string;
   hashtags: string[];
   contentType: PinContentType;
-  status: 'draft' | 'publishing' | 'published' | 'error';
+  status: 'draft' | 'publishing' | 'published' | 'scheduled' | 'error';
   createdAt: number;
+  scheduledAt?: number;
   pinterestPinId?: string;
   ideaId?: string;
 }

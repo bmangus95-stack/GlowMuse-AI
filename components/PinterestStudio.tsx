@@ -67,6 +67,9 @@ const PinterestStudio: React.FC<Props> = ({ isDarkMode }) => {
   const [drafts, setDrafts] = useState<PinterestPin[]>([]);
   const [ideaLists, setIdeaLists] = useState<IdeaList[]>([]);
   const [selectedDraftIds, setSelectedDraftIds] = useState<Set<string>>(new Set());
+  const [pinSchedules, setPinSchedules] = useState<Record<string, string>>({});
+  const [scheduleMode, setScheduleMode] = useState<'now' | 'schedule'>('now');
+  const [bulkSchedule, setBulkSchedule] = useState('');
   const [loading, setLoading] = useState(false);
   const [loadingMsg, setLoadingMsg] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -183,16 +186,54 @@ const PinterestStudio: React.FC<Props> = ({ isDarkMode }) => {
     if (!config.pinterestAccessToken) { setError('Add your Pinterest access token in Settings.'); return; }
 
     for (const pin of toPublish) {
+      const scheduleStr = pinSchedules[pin.id];
+      const scheduledAt = scheduleMode === 'schedule' && scheduleStr
+        ? new Date(scheduleStr).getTime()
+        : undefined;
+
+      if (scheduleMode === 'schedule' && !scheduleStr) {
+        setError(`Set a schedule time for "${pin.title}" before scheduling.`);
+        return;
+      }
+      if (scheduledAt && scheduledAt < Date.now() + 5 * 60 * 1000) {
+        setError(`Schedule time for "${pin.title}" must be at least 5 minutes in the future.`);
+        return;
+      }
+
       setDrafts(prev => prev.map(d => d.id === pin.id ? { ...d, status: 'publishing' } : d));
       try {
-        const pinId = await publishPin({ ...pin, boardId: pin.boardId || config.defaultBoardId }, config.pinterestAccessToken);
-        setDrafts(prev => prev.map(d => d.id === pin.id ? { ...d, status: 'published', pinterestPinId: pinId } : d));
+        const pinWithSchedule = {
+          ...pin,
+          boardId: pin.boardId || config.defaultBoardId,
+          scheduledAt,
+        };
+        const pinId = await publishPin(pinWithSchedule, config.pinterestAccessToken);
+        setDrafts(prev => prev.map(d =>
+          d.id === pin.id
+            ? { ...d, status: scheduledAt ? 'scheduled' : 'published', pinterestPinId: pinId, scheduledAt }
+            : d
+        ));
       } catch (e: any) {
         setDrafts(prev => prev.map(d => d.id === pin.id ? { ...d, status: 'error' } : d));
-        setError(`Failed to publish "${pin.title}": ${e.message}`);
+        setError(`Failed: "${pin.title}": ${e.message}`);
       }
     }
   };
+
+  const applyBulkSchedule = () => {
+    if (!bulkSchedule) return;
+    const next: Record<string, string> = { ...pinSchedules };
+    selectedDraftIds.forEach(id => { next[id] = bulkSchedule; });
+    setPinSchedules(next);
+  };
+
+  const minDateTime = () => {
+    const d = new Date(Date.now() + 6 * 60 * 1000);
+    return d.toISOString().slice(0, 16);
+  };
+
+  const formatScheduled = (ts: number) =>
+    new Date(ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
   const handlePublishIdeaList = async (list: IdeaList) => {
     if (!config.pinterestAccessToken) { setError('Add your Pinterest access token in Settings.'); return; }
@@ -775,12 +816,13 @@ const PinterestStudio: React.FC<Props> = ({ isDarkMode }) => {
         {/* ── PUBLISH STEP ──────────────────────────────────────────── */}
         {step === 'publish' && (
           <div className="space-y-8">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
               <div>
                 <h2 className="text-2xl font-bold mb-1">Publish to Pinterest</h2>
-                <p className={`${sub} text-sm`}>Select pins and publish directly to your Pinterest board with your affiliate links.</p>
+                <p className={`${sub} text-sm`}>Publish immediately or schedule pins to go live automatically — Pinterest handles the timer.</p>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 flex-shrink-0">
                 <button
                   onClick={() => {
                     const draftIds = new Set(drafts.filter(d => d.status === 'draft').map(d => d.id));
@@ -788,44 +830,101 @@ const PinterestStudio: React.FC<Props> = ({ isDarkMode }) => {
                   }}
                   className={`px-4 py-2 rounded-xl text-sm font-semibold border ${border} transition-all hover:border-[#e60023]`}
                 >
-                  Select All Drafts
+                  Select All
                 </button>
                 <button
                   onClick={handlePublishSelected}
                   disabled={loading || selectedDraftIds.size === 0 || !config.pinterestAccessToken}
-                  className="px-6 py-3 rounded-xl font-bold text-white shadow-lg disabled:opacity-50 transition-all"
+                  className="px-6 py-2.5 rounded-xl font-bold text-white shadow-lg disabled:opacity-50 transition-all whitespace-nowrap"
                   style={{ background: '#e60023' }}
                 >
-                  Publish {selectedDraftIds.size > 0 ? `(${selectedDraftIds.size})` : ''} Pins 📌
+                  {scheduleMode === 'schedule' ? '⏰' : '📌'} {scheduleMode === 'schedule' ? 'Schedule' : 'Publish'} {selectedDraftIds.size > 0 ? `(${selectedDraftIds.size})` : ''}
                 </button>
               </div>
+            </div>
+
+            {/* Publish mode toggle + controls */}
+            <div className={`${card} rounded-2xl border ${border} p-5 shadow-sm space-y-4`}>
+              {/* Mode toggle */}
+              <div className="flex items-center gap-3">
+                <p className={`text-sm font-semibold ${sub} mr-1`}>Mode:</p>
+                <div className={`flex gap-1 p-1 rounded-xl border ${border} w-fit`}>
+                  <button
+                    onClick={() => setScheduleMode('now')}
+                    className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-all ${scheduleMode === 'now' ? 'text-white shadow' : sub}`}
+                    style={scheduleMode === 'now' ? { background: '#e60023' } : {}}
+                  >
+                    Publish Now
+                  </button>
+                  <button
+                    onClick={() => setScheduleMode('schedule')}
+                    className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-all ${scheduleMode === 'schedule' ? 'text-white shadow' : sub}`}
+                    style={scheduleMode === 'schedule' ? { background: '#e60023' } : {}}
+                  >
+                    Schedule
+                  </button>
+                </div>
+                {scheduleMode === 'now' && (
+                  <p className={`text-xs ${sub}`}>Selected pins go live immediately.</p>
+                )}
+              </div>
+
+              {/* Bulk scheduler — shown only in Schedule mode */}
+              {scheduleMode === 'schedule' && (
+                <div className={`rounded-xl border ${border} p-4 space-y-3`} style={{ background: isDarkMode ? 'rgba(230,0,35,0.06)' : 'rgba(230,0,35,0.04)' }}>
+                  <p className="text-sm font-semibold" style={{ color: '#e60023' }}>Bulk schedule for selected pins</p>
+                  <div className="flex flex-col sm:flex-row gap-3 items-end">
+                    <div className="flex-1">
+                      <label className={`block text-xs font-semibold uppercase tracking-wider mb-1.5 ${sub}`}>Date &amp; Time</label>
+                      <input
+                        type="datetime-local"
+                        min={minDateTime()}
+                        value={bulkSchedule}
+                        onChange={e => setBulkSchedule(e.target.value)}
+                        className={inputCls}
+                      />
+                    </div>
+                    <button
+                      onClick={applyBulkSchedule}
+                      disabled={!bulkSchedule || selectedDraftIds.size === 0}
+                      className="px-5 py-3 rounded-xl text-sm font-bold text-white disabled:opacity-50 transition-all whitespace-nowrap"
+                      style={{ background: '#e60023' }}
+                    >
+                      Apply to Selected ({selectedDraftIds.size})
+                    </button>
+                  </div>
+                  <p className={`text-xs ${sub}`}>
+                    Or set a custom time per pin using the picker on each card below. Pinterest requires at least 5 minutes ahead.
+                  </p>
+                </div>
+              )}
+
+              {/* Board selector */}
+              {boards.length > 0 && (
+                <div>
+                  <label className={`block text-xs font-semibold uppercase tracking-wider mb-1.5 ${sub}`}>Target Board</label>
+                  <select
+                    className={inputCls}
+                    value={config.defaultBoardId}
+                    onChange={e => setConfig(c => ({ ...c, defaultBoardId: e.target.value }))}
+                  >
+                    <option value="">Select board...</option>
+                    {boards.map(b => (
+                      <option key={b.id} value={b.id}>{b.name} ({b.pinCount} pins)</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
 
             {!config.pinterestAccessToken && (
               <div className={`${card} rounded-2xl border border-yellow-200 dark:border-yellow-800/50 p-5 bg-yellow-50 dark:bg-yellow-950/20`}>
                 <p className="text-yellow-700 dark:text-yellow-300 text-sm font-medium flex items-center gap-2">
-                  <span>⚠️</span> Add your Pinterest access token in Settings to publish pins.
+                  <span>⚠️</span> Add your Pinterest access token in Settings to publish or schedule pins.
                 </p>
                 <button onClick={() => setShowSettings(true)} className="mt-2 text-xs underline text-yellow-600 dark:text-yellow-400">
                   Open Settings
                 </button>
-              </div>
-            )}
-
-            {/* Board selector */}
-            {boards.length > 0 && (
-              <div className={`${card} rounded-2xl border ${border} p-5 shadow-sm`}>
-                <label className={`block text-xs font-semibold uppercase tracking-wider mb-2 ${sub}`}>Publish to Board</label>
-                <select
-                  className={inputCls}
-                  value={config.defaultBoardId}
-                  onChange={e => setConfig(c => ({ ...c, defaultBoardId: e.target.value }))}
-                >
-                  <option value="">Select board...</option>
-                  {boards.map(b => (
-                    <option key={b.id} value={b.id}>{b.name} ({b.pinCount} pins)</option>
-                  ))}
-                </select>
               </div>
             )}
 
@@ -840,81 +939,120 @@ const PinterestStudio: React.FC<Props> = ({ isDarkMode }) => {
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
-                {drafts.map(pin => (
-                  <div
-                    key={pin.id}
-                    onClick={() => pin.status === 'draft' && toggleDraftSelect(pin.id)}
-                    className={`${card} rounded-2xl border overflow-hidden shadow-lg transition-all cursor-pointer ${
-                      selectedDraftIds.has(pin.id)
-                        ? 'ring-2 ring-offset-2 border-[#e60023]'
-                        : `${border} hover:shadow-xl`
-                    }`}
-                    style={selectedDraftIds.has(pin.id) ? { ringColor: '#e60023' } : {}}
-                  >
-                    <div className="relative aspect-[2/3] bg-gray-100 dark:bg-dark-700">
-                      {pin.imageUrl && (
-                        <img src={pin.imageUrl} alt={pin.title} className="w-full h-full object-cover" />
-                      )}
-                      <div className="absolute top-3 left-3">
-                        <div className={`w-6 h-6 rounded-full border-2 border-white flex items-center justify-center transition-all ${
-                          selectedDraftIds.has(pin.id) ? 'bg-[#e60023]' : 'bg-white/80'
-                        }`}>
-                          {selectedDraftIds.has(pin.id) && (
-                            <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                            </svg>
-                          )}
+                {drafts.map(pin => {
+                  const isDraft = pin.status === 'draft';
+                  const isSelected = selectedDraftIds.has(pin.id);
+                  const scheduleVal = pinSchedules[pin.id] ?? '';
+
+                  return (
+                    <div
+                      key={pin.id}
+                      className={`${card} rounded-2xl border overflow-hidden shadow-lg transition-all ${
+                        isDraft ? 'cursor-pointer' : ''
+                      } ${isSelected ? 'border-[#e60023] ring-2 ring-[#e60023]/30' : border}`}
+                    >
+                      {/* Image */}
+                      <div
+                        className="relative aspect-[2/3] bg-gray-100 dark:bg-dark-700"
+                        onClick={() => isDraft && toggleDraftSelect(pin.id)}
+                      >
+                        {pin.imageUrl && (
+                          <img src={pin.imageUrl} alt={pin.title} className="w-full h-full object-cover" />
+                        )}
+                        {/* Select checkbox */}
+                        <div className="absolute top-3 left-3">
+                          <div className={`w-6 h-6 rounded-full border-2 border-white flex items-center justify-center transition-all ${isSelected ? 'bg-[#e60023]' : 'bg-white/80'}`}>
+                            {isSelected && (
+                              <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                              </svg>
+                            )}
+                          </div>
                         </div>
+                        {/* Status badge */}
+                        <div className="absolute top-3 right-3">
+                          <span className={`text-xs px-2 py-1 rounded-full font-semibold ${
+                            pin.status === 'published' ? 'bg-green-500 text-white' :
+                            pin.status === 'scheduled' ? 'bg-blue-500 text-white' :
+                            pin.status === 'error' ? 'bg-red-500 text-white' :
+                            pin.status === 'publishing' ? 'bg-yellow-500 text-white' :
+                            'bg-white/90 text-gray-700'
+                          }`}>
+                            {pin.status === 'published' ? '✓ Published' :
+                             pin.status === 'scheduled' ? '⏰ Scheduled' :
+                             pin.status === 'error' ? '✗ Error' :
+                             pin.status === 'publishing' ? '⟳ Sending…' :
+                             'Draft'}
+                          </span>
+                        </div>
+                        {/* Scheduled time overlay */}
+                        {pin.status === 'scheduled' && pin.scheduledAt && (
+                          <div className="absolute bottom-0 left-0 right-0 bg-blue-500/90 backdrop-blur-sm px-3 py-2">
+                            <p className="text-white text-xs font-semibold text-center">
+                              Goes live {formatScheduled(pin.scheduledAt)}
+                            </p>
+                          </div>
+                        )}
                       </div>
-                      <div className="absolute top-3 right-3">
-                        <span className={`text-xs px-2 py-1 rounded-full font-semibold ${
-                          pin.status === 'published' ? 'bg-green-500 text-white' :
-                          pin.status === 'error' ? 'bg-red-500 text-white' :
-                          pin.status === 'publishing' ? 'bg-yellow-500 text-white' :
-                          'bg-white/90 text-gray-700'
-                        }`}>
-                          {pin.status === 'published' ? '✓ Published' :
-                           pin.status === 'error' ? '✗ Error' :
-                           pin.status === 'publishing' ? '⟳ Publishing…' :
-                           'Draft'}
-                        </span>
+
+                      {/* Card body */}
+                      <div className="p-4 space-y-2">
+                        <h4 className="font-bold text-sm line-clamp-2">{pin.title}</h4>
+                        <p className={`text-xs ${sub} line-clamp-2`}>{pin.description}</p>
+                        {pin.affiliateLink && (
+                          <a
+                            href={pin.affiliateLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs flex items-center gap-1 hover:underline"
+                            style={{ color: '#e60023' }}
+                          >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            </svg>
+                            Amazon affiliate link
+                          </a>
+                        )}
+
+                        {/* Per-pin schedule picker — only in schedule mode and for drafts */}
+                        {scheduleMode === 'schedule' && isDraft && (
+                          <div className="pt-2 border-t" style={{ borderColor: isDarkMode ? 'rgba(255,255,255,0.06)' : '#f3f4f6' }}>
+                            <label className={`block text-xs font-semibold uppercase tracking-wider mb-1.5 ${sub}`}>Schedule this pin</label>
+                            <input
+                              type="datetime-local"
+                              min={minDateTime()}
+                              value={scheduleVal}
+                              onChange={e => setPinSchedules(prev => ({ ...prev, [pin.id]: e.target.value }))}
+                              onClick={e => e.stopPropagation()}
+                              className={`${inputCls} text-xs py-2`}
+                            />
+                            {scheduleVal && (
+                              <p className="text-xs mt-1" style={{ color: '#e60023' }}>
+                                ⏰ {formatScheduled(new Date(scheduleVal).getTime())}
+                              </p>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
-                    <div className="p-4">
-                      <h4 className="font-bold text-sm mb-1 line-clamp-2">{pin.title}</h4>
-                      <p className={`text-xs ${sub} line-clamp-2 mb-2`}>{pin.description}</p>
-                      {pin.affiliateLink && (
-                        <a
-                          href={pin.affiliateLink}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs text-[#e60023] hover:underline flex items-center gap-1 mt-1"
-                          onClick={e => e.stopPropagation()}
-                        >
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                          </svg>
-                          Amazon affiliate link
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
             {/* Summary stats */}
             {drafts.length > 0 && (
               <div className={`${card} rounded-2xl border ${border} p-5 shadow-sm`}>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 text-center">
                   {[
-                    { label: 'Total Pins', value: drafts.length },
-                    { label: 'Published', value: drafts.filter(d => d.status === 'published').length },
-                    { label: 'Drafts', value: drafts.filter(d => d.status === 'draft').length },
-                    { label: 'Selected', value: selectedDraftIds.size },
+                    { label: 'Total', value: drafts.length, color: '' },
+                    { label: 'Drafts', value: drafts.filter(d => d.status === 'draft').length, color: '' },
+                    { label: 'Scheduled', value: drafts.filter(d => d.status === 'scheduled').length, color: '#3b82f6' },
+                    { label: 'Published', value: drafts.filter(d => d.status === 'published').length, color: '#22c55e' },
+                    { label: 'Selected', value: selectedDraftIds.size, color: '#e60023' },
                   ].map(stat => (
                     <div key={stat.label}>
-                      <p className="text-2xl font-bold" style={stat.label === 'Published' ? { color: '#22c55e' } : stat.label === 'Selected' ? { color: '#e60023' } : {}}>{stat.value}</p>
+                      <p className="text-2xl font-bold" style={stat.color ? { color: stat.color } : {}}>{stat.value}</p>
                       <p className={`text-xs ${sub} mt-0.5`}>{stat.label}</p>
                     </div>
                   ))}

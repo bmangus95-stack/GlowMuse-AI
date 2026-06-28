@@ -101,6 +101,11 @@ export async function publishPin(
     media_source: mediaSource,
   };
 
+  if (pin.scheduledAt) {
+    // Pinterest requires ISO 8601, at least 5 minutes in the future
+    body.publish_date = new Date(pin.scheduledAt).toISOString();
+  }
+
   const result = await pinterestFetch<{ id: string }>('/pins', accessToken, {
     method: 'POST',
     body: JSON.stringify(body),

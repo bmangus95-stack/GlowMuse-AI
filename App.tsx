@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import JSZip from 'jszip';
 import ImageUploader from './components/ImageUploader';
+import PinterestStudio from './components/PinterestStudio';
 import { generateTwinImage } from './services/gemini';
 import { 
   saveImageToGallery, 
@@ -36,6 +37,7 @@ import {
 } from './constants';
 
 const App: React.FC = () => {
+  const [appMode, setAppMode] = useState<'ugc' | 'pinterest'>('ugc');
   const [hasApiKey, setHasApiKey] = useState(false);
   const [isCheckingKey, setIsCheckingKey] = useState(true);
   const [isDarkMode, setIsDarkMode] = useState(false);
@@ -283,6 +285,43 @@ const App: React.FC = () => {
 
   const displayedImage = selectedImageId ? galleryHistory.find(img => img.id === selectedImageId) : null;
 
+  // Pinterest Studio mode — full-page replacement
+  if (appMode === 'pinterest') {
+    return (
+      <div className={`${bgMain} ${textColor}`}>
+        {/* Slim top bar with mode switcher */}
+        <div className={`fixed top-0 left-0 right-0 z-50 ${isDarkMode ? 'bg-dark-900/95' : 'bg-white/95'} border-b ${borderColor} backdrop-blur-xl`}>
+          <div className="max-w-7xl mx-auto px-6 h-12 flex items-center justify-between">
+            <div className="flex items-center gap-1 p-0.5 rounded-lg border ${borderColor} ${bgCard}">
+              <button
+                onClick={() => setAppMode('ugc')}
+                className={`px-3 py-1 rounded-md text-xs font-semibold transition-all ${appMode === 'ugc' ? 'bg-brand-500 text-white shadow' : subTextColor}`}
+              >
+                UGC Studio
+              </button>
+              <button
+                onClick={() => setAppMode('pinterest')}
+                className="px-3 py-1 rounded-md text-xs font-semibold text-white shadow transition-all"
+                style={{ background: '#e60023' }}
+              >
+                📌 Pinterest
+              </button>
+            </div>
+            <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-white/5 transition-colors">
+              {isDarkMode
+                ? <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m12.728 0l-.707-.707M6.343 6.343l-.707-.707M12 5a7 7 0 100 14 7 7 0 000-14z" /></svg>
+                : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" /></svg>
+              }
+            </button>
+          </div>
+        </div>
+        <div className="pt-12">
+          <PinterestStudio isDarkMode={isDarkMode} />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`min-h-screen ${bgMain} ${textColor} transition-colors duration-300 font-sans selection:bg-brand-500 selection:text-white`}>
       <header className={`sticky top-0 z-50 backdrop-blur-xl ${isDarkMode ? 'bg-dark-900/80' : 'bg-white/80'} border-b ${borderColor}`}>
@@ -292,6 +331,17 @@ const App: React.FC = () => {
             <h1 className="text-xl font-serif font-bold tracking-tight">UGC SKINCARE</h1>
           </div>
           <div className="flex items-center gap-4">
+            {/* Pinterest Studio mode button */}
+            <button
+              onClick={() => setAppMode('pinterest')}
+              className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-bold shadow-lg hover:shadow-xl transition-all"
+              style={{ background: '#e60023' }}
+            >
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 0C5.373 0 0 5.373 0 12c0 5.084 3.163 9.426 7.627 11.174-.105-.949-.2-2.405.042-3.441.218-.937 1.407-5.965 1.407-5.965s-.359-.719-.359-1.782c0-1.668.967-2.914 2.171-2.914 1.023 0 1.518.769 1.518 1.69 0 1.029-.655 2.568-.994 3.995-.283 1.194.599 2.169 1.777 2.169 2.133 0 3.772-2.249 3.772-5.495 0-2.873-2.064-4.882-5.012-4.882-3.414 0-5.418 2.561-5.418 5.207 0 1.031.397 2.138.893 2.738a.36.36 0 0 1 .083.345l-.333 1.36c-.053.22-.174.267-.402.161-1.499-.698-2.436-2.889-2.436-4.649 0-3.785 2.75-7.262 7.929-7.262 4.163 0 7.398 2.967 7.398 6.931 0 4.136-2.607 7.464-6.227 7.464-1.216 0-2.359-.632-2.75-1.378l-.748 2.853c-.271 1.043-1.002 2.35-1.492 3.146C9.57 23.812 10.763 24 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0z" />
+              </svg>
+              Pinterest Studio
+            </button>
             <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2.5 rounded-full hover:bg-gray-100 dark:hover:bg-white/5 transition-colors">
               {isDarkMode ? <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m12.728 0l-.707-.707M6.343 6.343l-.707-.707M12 5a7 7 0 100 14 7 7 0 000-14z" /></svg> : <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" /></svg>}
             </button>

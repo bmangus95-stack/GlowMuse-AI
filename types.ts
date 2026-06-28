@@ -75,3 +75,87 @@ declare global {
     aistudio?: AIStudio;
   }
 }
+
+// ─── Pinterest Studio Types ───────────────────────────────────────────────────
+
+export interface ProductResearchItem {
+  productName: string;
+  category: string;
+  pinterestAngle: string;
+  keyBenefits: string[];
+  targetAudience: string;
+  performanceSignal: string;
+  amazonSearchTerm: string;
+}
+
+export interface PinterestResearch {
+  niche: string;
+  topProducts: ProductResearchItem[];
+  trendingKeywords: string[];
+  contentAngles: string[];
+  competitorInsights: string;
+  seasonalTrends: string[];
+}
+
+export type PinContentType = 'collage' | 'infographic' | 'lifestyle' | 'idea-list';
+
+export interface PinterestContentIdea {
+  id: string;
+  title: string;
+  description: string;
+  hashtags: string[];
+  contentType: PinContentType;
+  productFocus: string;
+  affiliateKeyword: string;
+  visualConcept: string;
+  imagePrompt: string;
+}
+
+export interface PinterestPin {
+  id: string;
+  title: string;
+  description: string;
+  imageUrl: string;
+  affiliateLink: string;
+  boardId?: string;
+  boardName?: string;
+  hashtags: string[];
+  contentType: PinContentType;
+  status: 'draft' | 'publishing' | 'published' | 'scheduled' | 'error';
+  createdAt: number;
+  scheduledAt?: number;
+  pinterestPinId?: string;
+  ideaId?: string;
+}
+
+export interface PinterestBoard {
+  id: string;
+  name: string;
+  description: string;
+  pinCount: number;
+  privacy: string;
+}
+
+export interface IdeaListPage {
+  title: string;
+  description: string;
+  imageUrl?: string;
+  order: number;
+}
+
+export interface IdeaList {
+  id: string;
+  title: string;
+  description: string;
+  pages: IdeaListPage[];
+  boardId?: string;
+  status: 'draft' | 'published';
+  createdAt: number;
+}
+
+export interface PinterestStudioConfig {
+  pinterestAccessToken: string;
+  amazonAffiliateTag: string;
+  claudeApiKey: string;
+  defaultBoardId: string;
+}

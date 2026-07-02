@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   PinterestResearch,
   PinterestContentIdea,
@@ -19,6 +19,7 @@ import {
 import { getPinterestBoards, publishPin, publishIdeaPin } from '../services/pinterest';
 import { buildAffiliateSearchUrl } from '../services/amazon';
 import { generatePinterestImage, generateInfographicImage } from '../services/gemini';
+import { savePinterestStudioState, getPinterestStudioState } from '../services/storage';
 
 type StudioStep = 'research' | 'ideas' | 'create' | 'publish';
 
@@ -75,6 +76,48 @@ const PinterestStudio: React.FC<Props> = ({ isDarkMode }) => {
   const [error, setError] = useState<string | null>(null);
   const [activeIdeaTab, setActiveIdeaTab] = useState<PinContentType>('collage');
   const [ideaListTopic, setIdeaListTopic] = useState('');
+  const hydrated = useRef(false);
+
+  // Load saved Studio state (settings, research, drafts, idea lists) on mount.
+  useEffect(() => {
+    (async () => {
+      const saved = await getPinterestStudioState();
+      if (saved) {
+        setConfig(saved.config);
+        setNiched(saved.niche);
+        setIdeaCount(saved.ideaCount);
+        setResearch(saved.research);
+        setIdeas(saved.ideas);
+        setDrafts(saved.drafts);
+        setIdeaLists(saved.ideaLists);
+        setPinSchedules(saved.pinSchedules);
+        setScheduleMode(saved.scheduleMode);
+      }
+      hydrated.current = true;
+    })();
+  }, []);
+
+  // Persist Studio state whenever it changes, so a refresh doesn't wipe
+  // API keys, in-progress research, drafts, or scheduled pins.
+  useEffect(() => {
+    if (!hydrated.current) return;
+    const timer = setTimeout(() => {
+      savePinterestStudioState({
+        id: 'default',
+        config,
+        niche: niched,
+        ideaCount,
+        research,
+        ideas,
+        drafts,
+        ideaLists,
+        pinSchedules,
+        scheduleMode,
+        updatedAt: Date.now(),
+      });
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [config, niched, ideaCount, research, ideas, drafts, ideaLists, pinSchedules, scheduleMode]);
 
   const withLoading = async <T,>(msg: string, fn: () => Promise<T>): Promise<T | null> => {
     setLoading(true);

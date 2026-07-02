@@ -16,10 +16,21 @@ import {
   generateInfographicContent,
   generateIdeaListContent,
 } from '../services/claude';
-import { getPinterestBoards, publishPin, publishIdeaPin } from '../services/pinterest';
+import {
+  getPinterestBoards,
+  getPinterestUserInfo,
+  publishPin,
+  publishIdeaPin,
+  buildPinterestAuthUrl,
+  exchangePinterestCode,
+  refreshPinterestToken,
+} from '../services/pinterest';
 import { buildAffiliateSearchUrl } from '../services/amazon';
 import { generatePinterestImage, generateInfographicImage } from '../services/gemini';
 import { savePinterestStudioState, getPinterestStudioState } from '../services/storage';
+
+const PINTEREST_CLIENT_ID = (process.env.PINTEREST_CLIENT_ID as string) || '';
+const OAUTH_STATE_KEY = 'pinterest_oauth_state';
 
 type StudioStep = 'research' | 'ideas' | 'create' | 'publish';
 
@@ -78,12 +89,13 @@ const PinterestStudio: React.FC<Props> = ({ isDarkMode }) => {
   const [ideaListTopic, setIdeaListTopic] = useState('');
   const hydrated = useRef(false);
 
-  // Load saved Studio state (settings, research, drafts, idea lists) on mount.
+  // Load saved Studio state (settings, research, drafts, idea lists) on mount,
+  // then handle a Pinterest OAuth redirect back to this page, if present.
   useEffect(() => {
     (async () => {
       const saved = await getPinterestStudioState();
+      let nextConfig = saved?.config ?? DEFAULT_CONFIG;
       if (saved) {
-        setConfig(saved.config);
         setNiched(saved.niche);
         setIdeaCount(saved.ideaCount);
         setResearch(saved.research);
@@ -93,6 +105,37 @@ const PinterestStudio: React.FC<Props> = ({ isDarkMode }) => {
         setPinSchedules(saved.pinSchedules);
         setScheduleMode(saved.scheduleMode);
       }
+
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get('code');
+      const state = params.get('state');
+      if (code && state) {
+        const expectedState = sessionStorage.getItem(OAUTH_STATE_KEY);
+        sessionStorage.removeItem(OAUTH_STATE_KEY);
+        window.history.replaceState({}, '', window.location.pathname);
+
+        if (state === expectedState) {
+          try {
+            const redirectUri = `${window.location.origin}${window.location.pathname}`;
+            const token = await exchangePinterestCode(code, redirectUri);
+            nextConfig = {
+              ...nextConfig,
+              pinterestAccessToken: token.accessToken,
+              pinterestRefreshToken: token.refreshToken ?? nextConfig.pinterestRefreshToken,
+              pinterestTokenExpiresAt: token.expiresAt,
+            };
+            const userInfo = await getPinterestUserInfo(token.accessToken).catch(() => null);
+            if (userInfo) nextConfig = { ...nextConfig, pinterestUsername: userInfo.username };
+            setShowSettings(true);
+          } catch (e: any) {
+            setError(`Pinterest connection failed: ${e.message}`);
+          }
+        } else {
+          setError('Pinterest connection failed: invalid OAuth state.');
+        }
+      }
+
+      setConfig(nextConfig);
       hydrated.current = true;
     })();
   }, []);
@@ -215,18 +258,69 @@ const PinterestStudio: React.FC<Props> = ({ isDarkMode }) => {
     });
   };
 
+  // Pinterest access tokens expire (30 days); refresh proactively if we're
+  // holding a refresh token and the current one is stale or about to be.
+  const ensureFreshPinterestToken = async (): Promise<string> => {
+    const { pinterestAccessToken, pinterestRefreshToken, pinterestTokenExpiresAt } = config;
+    if (!pinterestAccessToken) throw new Error('Connect your Pinterest account in Settings first.');
+
+    const expiringSoon = pinterestTokenExpiresAt !== undefined && pinterestTokenExpiresAt - Date.now() < 5 * 60 * 1000;
+    if (expiringSoon && pinterestRefreshToken) {
+      const refreshed = await refreshPinterestToken(pinterestRefreshToken);
+      setConfig(c => ({
+        ...c,
+        pinterestAccessToken: refreshed.accessToken,
+        pinterestRefreshToken: refreshed.refreshToken ?? c.pinterestRefreshToken,
+        pinterestTokenExpiresAt: refreshed.expiresAt,
+      }));
+      return refreshed.accessToken;
+    }
+    return pinterestAccessToken;
+  };
+
+  const handleConnectPinterest = () => {
+    if (!PINTEREST_CLIENT_ID) {
+      setError('Pinterest OAuth is not configured. Set PINTEREST_CLIENT_ID and PINTEREST_CLIENT_SECRET (see README).');
+      return;
+    }
+    const state = crypto.randomUUID();
+    sessionStorage.setItem(OAUTH_STATE_KEY, state);
+    const redirectUri = `${window.location.origin}${window.location.pathname}`;
+    window.location.href = buildPinterestAuthUrl(PINTEREST_CLIENT_ID, redirectUri, state);
+  };
+
+  const handleDisconnectPinterest = () => {
+    setConfig(c => ({
+      ...c,
+      pinterestAccessToken: '',
+      pinterestRefreshToken: undefined,
+      pinterestTokenExpiresAt: undefined,
+      pinterestUsername: undefined,
+    }));
+    setBoards([]);
+  };
+
   const handleLoadBoards = async () => {
-    if (!config.pinterestAccessToken) { setError('Add your Pinterest access token in Settings.'); return; }
-    const result = await withLoading('Loading your Pinterest boards...', () =>
-      getPinterestBoards(config.pinterestAccessToken)
-    );
+    if (!config.pinterestAccessToken) { setError('Connect your Pinterest account in Settings first.'); return; }
+    const result = await withLoading('Loading your Pinterest boards...', async () => {
+      const token = await ensureFreshPinterestToken();
+      return getPinterestBoards(token);
+    });
     if (result) setBoards(result);
   };
 
   const handlePublishSelected = async () => {
     const toPublish = drafts.filter(d => selectedDraftIds.has(d.id) && d.status === 'draft');
     if (!toPublish.length) { setError('Select at least one draft pin to publish.'); return; }
-    if (!config.pinterestAccessToken) { setError('Add your Pinterest access token in Settings.'); return; }
+    if (!config.pinterestAccessToken) { setError('Connect your Pinterest account in Settings first.'); return; }
+
+    let accessToken: string;
+    try {
+      accessToken = await ensureFreshPinterestToken();
+    } catch (e: any) {
+      setError(e.message || 'Failed to refresh Pinterest connection.');
+      return;
+    }
 
     for (const pin of toPublish) {
       const scheduleStr = pinSchedules[pin.id];
@@ -250,7 +344,7 @@ const PinterestStudio: React.FC<Props> = ({ isDarkMode }) => {
           boardId: pin.boardId || config.defaultBoardId,
           scheduledAt,
         };
-        const pinId = await publishPin(pinWithSchedule, config.pinterestAccessToken);
+        const pinId = await publishPin(pinWithSchedule, accessToken);
         setDrafts(prev => prev.map(d =>
           d.id === pin.id
             ? { ...d, status: scheduledAt ? 'scheduled' : 'published', pinterestPinId: pinId, scheduledAt }
@@ -279,10 +373,11 @@ const PinterestStudio: React.FC<Props> = ({ isDarkMode }) => {
     new Date(ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
   const handlePublishIdeaList = async (list: IdeaList) => {
-    if (!config.pinterestAccessToken) { setError('Add your Pinterest access token in Settings.'); return; }
+    if (!config.pinterestAccessToken) { setError('Connect your Pinterest account in Settings first.'); return; }
     setIdeaLists(prev => prev.map(l => l.id === list.id ? { ...l, status: 'published' as const } : l));
     try {
-      await publishIdeaPin({ ...list, boardId: list.boardId || config.defaultBoardId }, config.pinterestAccessToken);
+      const accessToken = await ensureFreshPinterestToken();
+      await publishIdeaPin({ ...list, boardId: list.boardId || config.defaultBoardId }, accessToken);
     } catch (e: any) {
       setIdeaLists(prev => prev.map(l => l.id === list.id ? { ...l, status: 'draft' as const } : l));
       setError(`Failed to publish Idea List: ${e.message}`);
@@ -389,15 +484,43 @@ const PinterestStudio: React.FC<Props> = ({ isDarkMode }) => {
                 <p className={`text-xs mt-1 ${sub}`}>Used for research + content generation</p>
               </div>
               <div>
-                <label className={`block text-xs font-semibold uppercase tracking-wider mb-2 ${sub}`}>Pinterest Access Token</label>
-                <input
-                  type="password"
-                  placeholder="Your Pinterest OAuth token"
-                  value={config.pinterestAccessToken}
-                  onChange={e => setConfig(c => ({ ...c, pinterestAccessToken: e.target.value }))}
-                  className={inputCls}
-                />
-                <p className={`text-xs mt-1 ${sub}`}>Required for publishing pins</p>
+                <label className={`block text-xs font-semibold uppercase tracking-wider mb-2 ${sub}`}>Pinterest Account</label>
+                {config.pinterestAccessToken ? (
+                  <div className={`flex items-center justify-between gap-3 px-4 py-3 rounded-xl border ${border}`} style={{ background: 'rgba(34,197,94,0.08)' }}>
+                    <span className="text-sm font-medium text-green-600 dark:text-green-400">
+                      ✓ Connected{config.pinterestUsername ? ` as @${config.pinterestUsername}` : ''}
+                    </span>
+                    <button
+                      onClick={handleDisconnectPinterest}
+                      className={`text-xs font-semibold px-3 py-1.5 rounded-lg border ${border} hover:border-red-400 hover:text-red-500 transition-all`}
+                    >
+                      Disconnect
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <button
+                      onClick={handleConnectPinterest}
+                      className="w-full py-3 rounded-xl font-bold text-white shadow transition-all disabled:opacity-50"
+                      style={{ background: '#e60023' }}
+                    >
+                      📌 Connect Pinterest
+                    </button>
+                    {!PINTEREST_CLIENT_ID && (
+                      <p className={`text-xs ${sub}`}>Set PINTEREST_CLIENT_ID and PINTEREST_CLIENT_SECRET to enable one-click connect (see README). Paste a token manually below in the meantime.</p>
+                    )}
+                    <details>
+                      <summary className={`text-xs cursor-pointer ${sub}`}>Or paste an access token manually</summary>
+                      <input
+                        type="password"
+                        placeholder="Your Pinterest access token"
+                        value={config.pinterestAccessToken}
+                        onChange={e => setConfig(c => ({ ...c, pinterestAccessToken: e.target.value }))}
+                        className={`${inputCls} mt-2`}
+                      />
+                    </details>
+                  </div>
+                )}
               </div>
               <div>
                 <label className={`block text-xs font-semibold uppercase tracking-wider mb-2 ${sub}`}>Amazon Affiliate Tag</label>
@@ -963,7 +1086,7 @@ const PinterestStudio: React.FC<Props> = ({ isDarkMode }) => {
             {!config.pinterestAccessToken && (
               <div className={`${card} rounded-2xl border border-yellow-200 dark:border-yellow-800/50 p-5 bg-yellow-50 dark:bg-yellow-950/20`}>
                 <p className="text-yellow-700 dark:text-yellow-300 text-sm font-medium flex items-center gap-2">
-                  <span>⚠️</span> Add your Pinterest access token in Settings to publish or schedule pins.
+                  <span>⚠️</span> Connect your Pinterest account in Settings to publish or schedule pins.
                 </p>
                 <button onClick={() => setShowSettings(true)} className="mt-2 text-xs underline text-yellow-600 dark:text-yellow-400">
                   Open Settings

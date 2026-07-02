@@ -155,6 +155,9 @@ export interface IdeaList {
 
 export interface PinterestStudioConfig {
   pinterestAccessToken: string;
+  pinterestRefreshToken?: string;
+  pinterestTokenExpiresAt?: number;
+  pinterestUsername?: string;
   amazonAffiliateTag: string;
   claudeApiKey: string;
   defaultBoardId: string;

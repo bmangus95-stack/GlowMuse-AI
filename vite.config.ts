@@ -15,6 +15,7 @@ export default defineConfig(({ mode }) => {
         'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
         'process.env.CLAUDE_API_KEY': JSON.stringify(env.CLAUDE_API_KEY),
         'process.env.PINTEREST_ACCESS_TOKEN': JSON.stringify(env.PINTEREST_ACCESS_TOKEN),
+        'process.env.PINTEREST_CLIENT_ID': JSON.stringify(env.PINTEREST_CLIENT_ID),
         'process.env.AMAZON_AFFILIATE_TAG': JSON.stringify(env.AMAZON_AFFILIATE_TAG),
       },
       resolve: {

@@ -155,7 +155,24 @@ export interface IdeaList {
 
 export interface PinterestStudioConfig {
   pinterestAccessToken: string;
+  pinterestRefreshToken?: string;
+  pinterestTokenExpiresAt?: number;
+  pinterestUsername?: string;
   amazonAffiliateTag: string;
   claudeApiKey: string;
   defaultBoardId: string;
+}
+
+export interface PinterestStudioState {
+  id: 'default';
+  config: PinterestStudioConfig;
+  niche: string;
+  ideaCount: number;
+  research: PinterestResearch | null;
+  ideas: PinterestContentIdea[];
+  drafts: PinterestPin[];
+  ideaLists: IdeaList[];
+  pinSchedules: Record<string, string>;
+  scheduleMode: 'now' | 'schedule';
+  updatedAt: number;
 }

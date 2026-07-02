@@ -2,6 +2,8 @@
 import { PinterestBoard, PinterestPin, IdeaList } from '../types';
 
 const PINTEREST_API = 'https://api.pinterest.com/v5';
+const PINTEREST_AUTHORIZE_URL = 'https://www.pinterest.com/oauth/';
+const PINTEREST_OAUTH_SCOPES = ['boards:read', 'pins:read', 'pins:write', 'user_accounts:read'];
 
 async function pinterestFetch<T>(
   path: string,
@@ -112,6 +114,55 @@ export async function publishPin(
   });
 
   return result.id;
+}
+
+// ─── OAuth ──────────────────────────────────────────────────────────────────
+// The token exchange requires the Pinterest app's client secret, which must
+// never reach the browser bundle. It's kept server-side in the /api/pinterest-oauth
+// serverless function; the client only ever sees the resulting access token.
+
+export function buildPinterestAuthUrl(clientId: string, redirectUri: string, state: string): string {
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    response_type: 'code',
+    scope: PINTEREST_OAUTH_SCOPES.join(','),
+    state,
+  });
+  return `${PINTEREST_AUTHORIZE_URL}?${params.toString()}`;
+}
+
+export interface PinterestTokenResult {
+  accessToken: string;
+  refreshToken?: string;
+  expiresAt?: number;
+}
+
+async function requestPinterestToken(body: Record<string, string>): Promise<PinterestTokenResult> {
+  const response = await fetch('/api/pinterest-oauth', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || `Pinterest authorization failed: ${response.status}`);
+  }
+
+  return {
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token,
+    expiresAt: typeof data.expires_in === 'number' ? Date.now() + data.expires_in * 1000 : undefined,
+  };
+}
+
+export function exchangePinterestCode(code: string, redirectUri: string): Promise<PinterestTokenResult> {
+  return requestPinterestToken({ grant_type: 'authorization_code', code, redirect_uri: redirectUri });
+}
+
+export function refreshPinterestToken(refreshToken: string): Promise<PinterestTokenResult> {
+  return requestPinterestToken({ grant_type: 'refresh_token', refresh_token: refreshToken });
 }
 
 export async function publishIdeaPin(

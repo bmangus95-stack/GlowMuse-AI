@@ -1,22 +1,23 @@
 
-import { GeneratedImage, UserPreset } from "../types";
+import { GeneratedImage, UserPreset, PinterestStudioState } from "../types";
 
 const DB_NAME = 'TwinEffectDB';
 const STORE_NAME = 'images';
 const STORE_PRESETS = 'presets';
-const DB_VERSION = 2; // Incremented for new store
+const STORE_PINTEREST_STUDIO = 'pinterest_studio';
+const DB_VERSION = 3; // Incremented for Pinterest Studio persistence store
 
 export const openDB = (): Promise<IDBDatabase> => {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
-    
+
     request.onerror = () => {
       console.error("IndexedDB error:", request.error);
       reject(request.error);
     };
-    
+
     request.onsuccess = () => resolve(request.result);
-    
+
     request.onupgradeneeded = (event) => {
       const db = (event.target as IDBOpenDBRequest).result;
       if (!db.objectStoreNames.contains(STORE_NAME)) {
@@ -24,6 +25,9 @@ export const openDB = (): Promise<IDBDatabase> => {
       }
       if (!db.objectStoreNames.contains(STORE_PRESETS)) {
         db.createObjectStore(STORE_PRESETS, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(STORE_PINTEREST_STUDIO)) {
+        db.createObjectStore(STORE_PINTEREST_STUDIO, { keyPath: 'id' });
       }
     };
   });
@@ -126,5 +130,38 @@ export const deleteUserPresetFromDB = async (id: string): Promise<void> => {
     });
   } catch (e) {
     console.error("Failed to delete preset", e);
+  }
+};
+
+// Pinterest Studio persistence — settings, research, drafts, and idea lists
+// survive page reloads instead of living only in React state.
+export const savePinterestStudioState = async (state: PinterestStudioState): Promise<void> => {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_PINTEREST_STUDIO, 'readwrite');
+      const store = tx.objectStore(STORE_PINTEREST_STUDIO);
+      const request = store.put(state);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  } catch (e) {
+    console.error("Failed to save Pinterest Studio state", e);
+  }
+};
+
+export const getPinterestStudioState = async (): Promise<PinterestStudioState | null> => {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_PINTEREST_STUDIO, 'readonly');
+      const store = tx.objectStore(STORE_PINTEREST_STUDIO);
+      const request = store.get('default');
+      request.onsuccess = () => resolve((request.result as PinterestStudioState) ?? null);
+      request.onerror = () => reject(request.error);
+    });
+  } catch (e) {
+    console.error("Failed to load Pinterest Studio state", e);
+    return null;
   }
 };

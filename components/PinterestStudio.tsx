@@ -32,21 +32,31 @@ import { savePinterestStudioState, getPinterestStudioState } from '../services/s
 const PINTEREST_CLIENT_ID = (process.env.PINTEREST_CLIENT_ID as string) || '';
 const OAUTH_STATE_KEY = 'pinterest_oauth_state';
 
-type StudioStep = 'research' | 'ideas' | 'create' | 'publish';
+type StudioStep = 'auto' | 'research' | 'ideas' | 'create' | 'publish';
 
-const STEP_ORDER: StudioStep[] = ['research', 'ideas', 'create', 'publish'];
+const STEP_ORDER: StudioStep[] = ['auto', 'research', 'ideas', 'create', 'publish'];
 const STEP_LABELS: Record<StudioStep, string> = {
+  auto: 'Auto-Pilot',
   research: 'Research',
   ideas: 'Ideas',
   create: 'Create',
   publish: 'Publish',
 };
 const STEP_ICONS: Record<StudioStep, string> = {
+  auto: '🚀',
   research: '🔍',
   ideas: '💡',
   create: '🎨',
   publish: '📌',
 };
+
+const AUTO_PILOT_CADENCES = [
+  { hours: 24, label: '1 per day' },
+  { hours: 12, label: '2 per day' },
+  { hours: 8, label: '3 per day' },
+  { hours: 168, label: '1 per week' },
+  { hours: 84, label: '2 per week' },
+];
 
 interface Props {
   isDarkMode: boolean;
@@ -67,7 +77,7 @@ const PinterestStudio: React.FC<Props> = ({ isDarkMode }) => {
   const sub = isDarkMode ? 'text-gray-400' : 'text-gray-500';
   const inputCls = `w-full px-4 py-3 rounded-xl border ${border} ${card} ${text} text-sm focus:outline-none focus:ring-2 focus:ring-[#e60023]/40`;
 
-  const [step, setStep] = useState<StudioStep>('research');
+  const [step, setStep] = useState<StudioStep>('auto');
   const [showSettings, setShowSettings] = useState(false);
   const [config, setConfig] = useState<PinterestStudioConfig>(DEFAULT_CONFIG);
   const [niched, setNiched] = useState('luxury skincare');
@@ -87,6 +97,14 @@ const PinterestStudio: React.FC<Props> = ({ isDarkMode }) => {
   const [error, setError] = useState<string | null>(null);
   const [activeIdeaTab, setActiveIdeaTab] = useState<PinContentType>('collage');
   const [ideaListTopic, setIdeaListTopic] = useState('');
+  const [autoPilotCount, setAutoPilotCount] = useState(6);
+  const [autoPilotIntervalHours, setAutoPilotIntervalHours] = useState(24);
+  const [autoPilotStart, setAutoPilotStart] = useState(() =>
+    new Date(Date.now() + 60 * 60 * 1000).toISOString().slice(0, 16)
+  );
+  const [autoPilotRunning, setAutoPilotRunning] = useState(false);
+  const [autoPilotLog, setAutoPilotLog] = useState<string[]>([]);
+  const [autoPilotCompleted, setAutoPilotCompleted] = useState(0);
   const hydrated = useRef(false);
 
   // Load saved Studio state (settings, research, drafts, idea lists) on mount,
@@ -384,6 +402,102 @@ const PinterestStudio: React.FC<Props> = ({ isDarkMode }) => {
     }
   };
 
+  // Auto-Pilot: research → generate ideas → create → schedule a whole batch
+  // of pins in one run, spread across future dates. Pinterest's own scheduler
+  // (via publish_date on each pin) handles actually publishing them later, so
+  // nothing needs to keep running once this finishes.
+  const runAutoPilot = async () => {
+    if (!niched.trim()) { setError('Enter a niche for Auto-Pilot.'); return; }
+    if (!config.claudeApiKey) { setError('Add your Claude API key in Settings first.'); return; }
+    if (!config.pinterestAccessToken) { setError('Connect your Pinterest account in Settings first.'); return; }
+
+    const startTime = new Date(autoPilotStart).getTime();
+    if (!autoPilotStart || isNaN(startTime) || startTime < Date.now() + 5 * 60 * 1000) {
+      setError('Set an Auto-Pilot start time at least 5 minutes in the future.');
+      return;
+    }
+
+    setAutoPilotRunning(true);
+    setAutoPilotLog([]);
+    setAutoPilotCompleted(0);
+    setError(null);
+    const log = (msg: string) => setAutoPilotLog(prev => [...prev, msg]);
+
+    try {
+      let activeResearch = research && research.niche === niched ? research : null;
+      if (!activeResearch) {
+        log(`🔍 Researching "${niched}" on Pinterest...`);
+        activeResearch = await researchPinterestNiche(niched, config.claudeApiKey);
+        setResearch(activeResearch);
+      } else {
+        log(`🔍 Reusing existing research for "${niched}".`);
+      }
+
+      log(`💡 Generating ${autoPilotCount} content ideas...`);
+      const generatedIdeas = await generateContentIdeas(activeResearch, autoPilotCount, config.claudeApiKey);
+      setIdeas(generatedIdeas);
+
+      // Idea Lists have a different, non-schedulable publish shape — skip them in a batch run.
+      const batchIdeas = generatedIdeas.filter(i => i.contentType !== 'idea-list').slice(0, autoPilotCount);
+      if (!batchIdeas.length) {
+        log('✗ No schedulable ideas came back — try again or lower the pin count.');
+        return;
+      }
+
+      const accessToken = await ensureFreshPinterestToken();
+
+      for (let i = 0; i < batchIdeas.length; i++) {
+        const idea = batchIdeas[i];
+        const scheduledAt = startTime + i * autoPilotIntervalHours * 60 * 60 * 1000;
+        log(`🎨 Creating pin ${i + 1}/${batchIdeas.length}: "${idea.title}"...`);
+
+        try {
+          const [copy, imageUrl] = await Promise.all([
+            generatePinCopy(idea, config.amazonAffiliateTag, config.claudeApiKey),
+            idea.contentType === 'infographic'
+              ? generateInfographicContent(idea, config.claudeApiKey).then(generateInfographicImage)
+              : generatePinterestImage(idea.imagePrompt, '2:3'),
+          ]);
+
+          const affiliateLink = config.amazonAffiliateTag
+            ? buildAffiliateSearchUrl(idea.affiliateKeyword, config.amazonAffiliateTag)
+            : '';
+
+          const pin: PinterestPin = {
+            id: `pin_auto_${Date.now()}_${i}`,
+            title: copy.title,
+            description: copy.description,
+            imageUrl,
+            affiliateLink,
+            boardId: config.defaultBoardId,
+            hashtags: copy.hashtags,
+            contentType: idea.contentType,
+            status: 'publishing',
+            createdAt: Date.now(),
+            ideaId: idea.id,
+            scheduledAt,
+          };
+          setDrafts(prev => [pin, ...prev]);
+
+          log(`⏰ Scheduling "${copy.title}" for ${formatScheduled(scheduledAt)}...`);
+          const pinId = await publishPin(pin, accessToken);
+          setDrafts(prev => prev.map(d => d.id === pin.id ? { ...d, status: 'scheduled', pinterestPinId: pinId } : d));
+          setAutoPilotCompleted(prev => prev + 1);
+          log(`✓ Scheduled "${copy.title}" for ${formatScheduled(scheduledAt)}`);
+        } catch (e: any) {
+          log(`✗ Failed on "${idea.title}": ${e.message}`);
+        }
+      }
+
+      log(`🚀 Auto-Pilot finished.`);
+    } catch (e: any) {
+      setError(e.message || 'Auto-Pilot failed.');
+      log(`✗ ${e.message}`);
+    } finally {
+      setAutoPilotRunning(false);
+    }
+  };
+
   const toggleDraftSelect = (id: string) => {
     setSelectedDraftIds(prev => {
       const next = new Set(prev);
@@ -582,6 +696,120 @@ const PinterestStudio: React.FC<Props> = ({ isDarkMode }) => {
           <div className={`mb-6 px-5 py-4 rounded-xl border ${border} ${card} flex items-center gap-4`}>
             <div className="w-5 h-5 rounded-full border-2 border-[#e60023] border-t-transparent animate-spin flex-shrink-0" />
             <p className={`text-sm ${sub}`}>{loadingMsg}</p>
+          </div>
+        )}
+
+        {/* ── AUTO-PILOT STEP ───────────────────────────────────────── */}
+        {step === 'auto' && (
+          <div className="space-y-8">
+            <div>
+              <h2 className="text-2xl font-bold mb-1">Auto-Pilot</h2>
+              <p className={`${sub} text-sm`}>Generate and schedule a whole batch of pins in one run — Claude researches and writes, Gemini creates the images, and Pinterest's own scheduler handles publishing them later. You don't need to keep this tab open once it finishes.</p>
+            </div>
+
+            <div className={`${card} rounded-2xl border ${border} p-6 shadow-lg space-y-5`}>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className={`block text-xs font-semibold uppercase tracking-wider mb-2 ${sub}`}>Niche / Category</label>
+                  <input
+                    value={niched}
+                    onChange={e => setNiched(e.target.value)}
+                    placeholder="e.g. luxury skincare, kitchen gadgets..."
+                    className={inputCls}
+                    disabled={autoPilotRunning}
+                  />
+                </div>
+                <div>
+                  <label className={`block text-xs font-semibold uppercase tracking-wider mb-2 ${sub}`}>Number of Pins</label>
+                  <select
+                    value={autoPilotCount}
+                    onChange={e => setAutoPilotCount(Number(e.target.value))}
+                    className={inputCls}
+                    disabled={autoPilotRunning}
+                  >
+                    {[3, 5, 6, 7, 10, 14].map(n => <option key={n} value={n}>{n} pins</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className={`block text-xs font-semibold uppercase tracking-wider mb-2 ${sub}`}>Cadence</label>
+                  <select
+                    value={autoPilotIntervalHours}
+                    onChange={e => setAutoPilotIntervalHours(Number(e.target.value))}
+                    className={inputCls}
+                    disabled={autoPilotRunning}
+                  >
+                    {AUTO_PILOT_CADENCES.map(c => <option key={c.hours} value={c.hours}>{c.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className={`block text-xs font-semibold uppercase tracking-wider mb-2 ${sub}`}>First Pin Goes Live</label>
+                  <input
+                    type="datetime-local"
+                    min={new Date(Date.now() + 6 * 60 * 1000).toISOString().slice(0, 16)}
+                    value={autoPilotStart}
+                    onChange={e => setAutoPilotStart(e.target.value)}
+                    className={inputCls}
+                    disabled={autoPilotRunning}
+                  />
+                </div>
+              </div>
+
+              {boards.length > 0 && (
+                <div>
+                  <label className={`block text-xs font-semibold uppercase tracking-wider mb-2 ${sub}`}>Target Board</label>
+                  <select
+                    className={inputCls}
+                    value={config.defaultBoardId}
+                    onChange={e => setConfig(c => ({ ...c, defaultBoardId: e.target.value }))}
+                    disabled={autoPilotRunning}
+                  >
+                    <option value="">Select board...</option>
+                    {boards.map(b => (
+                      <option key={b.id} value={b.id}>{b.name} ({b.pinCount} pins)</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {!config.defaultBoardId && (
+                <p className={`text-xs ${sub}`}>Tip: set a default board in Settings so pins have somewhere to publish.</p>
+              )}
+
+              <button
+                onClick={runAutoPilot}
+                disabled={autoPilotRunning || !niched.trim() || !config.claudeApiKey || !config.pinterestAccessToken}
+                className="w-full py-3.5 rounded-xl font-bold text-white shadow-lg disabled:opacity-50 transition-all hover:shadow-xl"
+                style={{ background: '#e60023' }}
+              >
+                {autoPilotRunning
+                  ? `Running Auto-Pilot… (${autoPilotCompleted}/${autoPilotCount})`
+                  : `🚀 Generate & Schedule ${autoPilotCount} Pins`}
+              </button>
+              {(!config.claudeApiKey || !config.pinterestAccessToken) && (
+                <p className={`text-xs ${sub}`}>Add a Claude API key and connect Pinterest in Settings to run Auto-Pilot.</p>
+              )}
+            </div>
+
+            {autoPilotLog.length > 0 && (
+              <div className={`${card} rounded-2xl border ${border} p-5 shadow-lg`}>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-bold">Progress</h3>
+                  {!autoPilotRunning && (
+                    <button
+                      onClick={() => setStep('publish')}
+                      className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white"
+                      style={{ background: '#e60023' }}
+                    >
+                      View in Publish →
+                    </button>
+                  )}
+                </div>
+                <div className="space-y-1 font-mono text-xs max-h-72 overflow-y-auto">
+                  {autoPilotLog.map((line, i) => (
+                    <div key={i} className={line.startsWith('✗') ? 'text-red-500' : sub}>{line}</div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

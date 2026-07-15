@@ -8,7 +8,7 @@ import {
 const CLAUDE_API_URL = 'https://api.anthropic.com/v1/messages';
 const CLAUDE_MODEL = 'claude-sonnet-4-6';
 
-async function callClaude(
+export async function callClaude(
   prompt: string,
   apiKey: string,
   maxTokens = 4096
@@ -37,7 +37,7 @@ async function callClaude(
   return data.content?.[0]?.text ?? '';
 }
 
-function parseJSON<T>(raw: string): T {
+export function parseJSON<T>(raw: string): T {
   const match = raw.match(/```(?:json)?\s*([\s\S]*?)```/) ?? raw.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
   const jsonStr = match ? match[1] : raw;
   return JSON.parse(jsonStr.trim());

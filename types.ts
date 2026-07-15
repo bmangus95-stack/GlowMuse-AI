@@ -176,3 +176,86 @@ export interface PinterestStudioState {
   scheduleMode: 'now' | 'schedule';
   updatedAt: number;
 }
+
+// ─── Content Engine Types ──────────────────────────────────────────────────
+// A reusable, niche-agnostic content-planning generator (keywords, categories,
+// a content calendar, board/blog planners, and a bestseller list) for any
+// seasonal or evergreen campaign — Back to School is just the first theme run
+// through it. Traffic/opportunity signals here are AI-estimated, not real
+// Pinterest/Amazon search volume, and must be labeled as such in the UI/export.
+
+export type OpportunityTier = 'high' | 'medium' | 'low';
+
+export interface ContentCategory {
+  id: string;
+  name: string;
+  emoji: string;
+  description: string;
+}
+
+export interface ContentKeyword {
+  keyword: string;
+  categoryId: string;
+  searchIntent: string;
+  opportunityTier: OpportunityTier;
+  relatedProduct: string;
+  amazonSearchTerm: string;
+}
+
+export type CalendarContentType = 'pin' | 'idea-list' | 'blog' | 'infographic' | 'video';
+
+export interface CalendarEntry {
+  day: number;
+  title: string;
+  contentType: CalendarContentType;
+  categoryId: string;
+  notes: string;
+}
+
+export interface BoardPlanEntry {
+  boardName: string;
+  description: string;
+  categoryId: string;
+  keywordSeeds: string[];
+}
+
+export interface BlogPlanEntry {
+  title: string;
+  targetKeyword: string;
+  categoryId: string;
+  outline: string[];
+}
+
+export interface BestSellerItem {
+  productName: string;
+  categoryId: string;
+  amazonSearchTerm: string;
+  note: string;
+}
+
+export interface ContentEngineConfig {
+  keywordTarget: number;
+  calendarDays: number;
+  categoryCount: number;
+  bestSellerCount: number;
+}
+
+export interface ContentEnginePackage {
+  id: string;
+  theme: string;
+  niche: string;
+  createdAt: number;
+  updatedAt: number;
+  config: ContentEngineConfig;
+  categories: ContentCategory[];
+  keywords: ContentKeyword[];
+  calendar: CalendarEntry[];
+  boardPlan: BoardPlanEntry[];
+  blogPlan: BlogPlanEntry[];
+  bestSellers: BestSellerItem[];
+}
+
+export interface ContentEngineSettings {
+  id: 'settings';
+  claudeApiKey: string;
+}
